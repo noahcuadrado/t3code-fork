@@ -827,6 +827,13 @@ describe("CursorAdapterV2", () => {
       assert.equal(runtime.getModelContextWindow?.(selection("300K")), 300_000);
       assert.isUndefined(runtime.getModelContextWindow?.(selection()));
       assert.isUndefined(runtime.getModelContextWindow?.(selection("max")));
+      assert.isUndefined(runtime.getModelContextWindow?.(selection("0k")));
+      assert.isUndefined(
+        runtime.getModelContextWindow?.({
+          ...selection("1m"),
+          instanceId: ProviderInstanceId.make("other-cursor"),
+        }),
+      );
 
       // Cursor reports no context usage, so the budget falls back to a byte
       // estimate of the native transcript, here a thread with long shell output.
