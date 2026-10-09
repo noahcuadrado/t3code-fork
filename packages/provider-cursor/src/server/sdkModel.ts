@@ -61,7 +61,7 @@ export function cursorContextWindowTokens(
   const match = /^(\d+)([km])$/i.exec(typeof value === "string" ? value.trim() : "");
   if (match === null) return undefined;
   const tokens = Number(match[1]) * (match[2]?.toLowerCase() === "m" ? 1_000_000 : 1_000);
-  return tokens > 0 ? tokens : undefined;
+  return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined;
 }
 
 export function cursorSdkModelSelection(modelSelection: ModelSelection): CursorSdkModelSelection {

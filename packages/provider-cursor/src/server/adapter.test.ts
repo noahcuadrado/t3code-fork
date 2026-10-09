@@ -828,6 +828,7 @@ describe("CursorAdapterV2", () => {
       assert.isUndefined(runtime.getModelContextWindow?.(selection()));
       assert.isUndefined(runtime.getModelContextWindow?.(selection("max")));
       assert.isUndefined(runtime.getModelContextWindow?.(selection("0k")));
+      assert.isUndefined(runtime.getModelContextWindow?.(selection(`${"9".repeat(400)}m`)));
       assert.isUndefined(
         runtime.getModelContextWindow?.({
           ...selection("1m"),
