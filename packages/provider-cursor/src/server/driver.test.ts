@@ -148,7 +148,7 @@ it.layer(layerTest)("CursorDriver", (it) => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("reports the catalog's default context window once the Cursor catalog loads", () =>
+  it.effect("reports the default context window from the last loaded Cursor catalog", () =>
     Effect.gen(function* () {
       const catalog = Promise.withResolvers<Array<SDKModel>>();
       const me = vi.spyOn(Cursor, "me").mockResolvedValue({
@@ -218,6 +218,10 @@ it.layer(layerTest)("CursorDriver", (it) => {
       yield* instance.snapshot.refresh;
       expect(runtime.getModelContextWindow?.(selection())).toBe(1_000_000);
       expect(runtime.getModelContextWindow?.(selection("300k"))).toBe(300_000);
+
+      me.mockRejectedValue(new Error("Cursor is unreachable"));
+      expect((yield* instance.snapshot.refresh).status).toBe("error");
+      expect(runtime.getModelContextWindow?.(selection())).toBe(1_000_000);
     }).pipe(Effect.scoped),
   );
 

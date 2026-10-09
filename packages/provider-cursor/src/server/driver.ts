@@ -230,7 +230,10 @@ export const CursorDriver: ProviderDriver<CursorSettings, CursorDriverEnv> = {
         Effect.map(stampSnapshot),
         Effect.tap((provider) =>
           Effect.sync(() => {
-            catalogModels = provider.models;
+            // A failed check lists only custom models, so keep the last loaded catalog.
+            if (provider.models.some((model) => !model.isCustom)) {
+              catalogModels = provider.models;
+            }
           }),
         ),
         Effect.provide(CursorSdkCatalog.layer),
