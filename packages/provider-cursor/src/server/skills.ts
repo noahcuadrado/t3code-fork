@@ -284,9 +284,23 @@ export function hasCursorSkillMention(prompt: string): boolean {
 
 export function rewriteCursorSkillMentions(
   prompt: string,
-  skillNames: ReadonlySet<string>,
+  skills: ReadonlyMap<string, ServerProviderSkill>,
 ): string {
-  return prompt.replace(SKILL_MENTION_PATTERN, (match, prefix: string, name: string) =>
-    skillNames.has(name) ? `${prefix}/${name}` : match,
-  );
+  // Cursor hides user-invocation-only skills from the model, and `@cursor/sdk` cannot select them.
+  const hiddenSkills = new Set<ServerProviderSkill>();
+  const rewritten = prompt.replace(SKILL_MENTION_PATTERN, (match, prefix: string, name: string) => {
+    const skill = skills.get(name);
+    if (!skill) return match;
+    if (skill.userInvocationOnly) hiddenSkills.add(skill);
+    return `${prefix}/${name}`;
+  });
+  if (hiddenSkills.size === 0) return rewritten;
+  const invocations = [...hiddenSkills].map((skill) => {
+    const escapedPath = skill.path
+      .replaceAll("&", "&amp;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("<", "&lt;");
+    return `<invoked_skill name="${skill.name}" path="${escapedPath}">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>`;
+  });
+  return `${rewritten}\n\n${invocations.join("\n")}`;
 }

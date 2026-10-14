@@ -2107,7 +2107,6 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           return next;
         });
 
-        let cursorSkillNames: ReadonlySet<string> | undefined;
         const resolveUserMessage = Effect.fnUntraced(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           mcpServers: Record<string, McpServerConfig> | undefined,
@@ -2116,26 +2115,23 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           if (rawText.trim() === "/compress" && turnInput.message.attachments.length === 0) {
             return "/compress";
           }
-          if (hasCursorSkillMention(rawText) && cursorSkillNames === undefined) {
-            const skills = yield* discoverCursorSkills(
-              turnInput.runtimePolicy.cwd ?? undefined,
-              adapterOptions.environment,
-            ).pipe(
-              Effect.provideService(FileSystem.FileSystem, fileSystem),
-              Effect.provideService(Path.Path, path),
-            );
-            cursorSkillNames = new Set(
-              skills
-                .filter((skill) => skill.enabled && skill.userInvocable !== false)
-                .map((skill) => skill.name),
-            );
-          }
+          const skills = hasCursorSkillMention(rawText)
+            ? yield* discoverCursorSkills(
+                turnInput.runtimePolicy.cwd ?? undefined,
+                adapterOptions.environment,
+              ).pipe(
+                Effect.provideService(FileSystem.FileSystem, fileSystem),
+                Effect.provideService(Path.Path, path),
+              )
+            : [];
+          const invocableSkills = new Map(
+            skills
+              .filter((skill) => skill.enabled && skill.userInvocable !== false)
+              .map((skill) => [skill.name, skill]),
+          );
           const userText = t3OrchestrationPromptForFirstRun({
             prompt: providerMessageTextWithAttachmentPaths({
-              text:
-                cursorSkillNames === undefined
-                  ? rawText
-                  : rewriteCursorSkillMentions(rawText, cursorSkillNames),
+              text: rewriteCursorSkillMentions(rawText, invocableSkills),
               attachments: turnInput.message.attachments,
               resolveAttachmentPath: host.resolveAttachmentPath,
             }),
