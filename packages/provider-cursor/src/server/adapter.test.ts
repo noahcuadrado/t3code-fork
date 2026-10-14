@@ -371,6 +371,145 @@ describe("CursorAdapterV2", () => {
     ),
   );
 
+  it.effect("points Cursor at the current SKILL.md of skills it hides from the model", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspace = yield* fileSystem
+        .makeTempDirectoryScoped({ prefix: "cursor-v2-skills-" })
+        .pipe(Effect.flatMap((directory) => fileSystem.realPath(directory)));
+      const cursorSkill = path.join(workspace, ".cursor", "skills", "ship-it");
+      const agentsSkill = path.join(workspace, ".agents", "skills", "ship-it");
+      yield* fileSystem.makeDirectory(cursorSkill, { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(cursorSkill, "SKILL.md"),
+        "---\ndisable-model-invocation: true\n---\n",
+      );
+      const sentMessages: Array<string> = [];
+      const instanceId = ProviderInstanceId.make("cursor");
+      const threadId = ThreadId.make("cursor-skill-thread");
+      const modelSelection = { instanceId, model: "composer-2.5" };
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const adapter = yield* makeCursorAdapterV2({
+        instanceId,
+        settings: yield* decodeCursorSettings({}),
+        environment: { HOME: workspace },
+      }).pipe(
+        Effect.provideService(CursorAgentSdk.CursorAgentSdkRunner, {
+          assertComplete: Effect.void,
+          open: () =>
+            Effect.succeed({
+              agentId: "native-cursor-skill",
+              listMessages: Effect.succeed([]),
+              close: Effect.void,
+              send: (input) =>
+                Effect.sync(() => {
+                  sentMessages.push(
+                    typeof input.message === "string" ? input.message : input.message.text,
+                  );
+                  const runId = `native-cursor-run-${sentMessages.length}`;
+                  return {
+                    agentId: "native-cursor-skill",
+                    runId,
+                    wait: Effect.succeed({
+                      id: runId,
+                      requestId: `native-request-${sentMessages.length}`,
+                      status: "finished" as const,
+                      model: { id: "composer-2.5" },
+                      durationMs: 1,
+                    }),
+                    cancel: Effect.void,
+                  };
+                }),
+            }),
+        }),
+        Effect.provide(TestProviderHost.layer({ cwd: workspace })),
+      );
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("cursor-skill-session"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const appThread = {
+        id: threadId,
+        projectId: ProjectId.make("cursor-skill-project"),
+        createdBy: "user" as const,
+        creationSource: "web" as const,
+        title: "Cursor skill invocation",
+        providerInstanceId: instanceId,
+        modelSelection,
+        runtimeMode: "full-access" as const,
+        interactionMode: "default" as const,
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: providerThread.id,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      };
+      const sendTurn = Effect.fn("sendCursorSkillTurn")(function* (ordinal: number, text: string) {
+        yield* runtime.startTurn({
+          threadId,
+          providerThread,
+          modelSelection,
+          runtimePolicy,
+          runId: RunId.make(`cursor-skill-run-${ordinal}`),
+          runOrdinal: ordinal,
+          providerTurnOrdinal: ordinal,
+          attemptId: RunAttemptId.make(`cursor-skill-attempt-${ordinal}`),
+          rootNodeId: NodeId.make(`cursor-skill-root-${ordinal}`),
+          appThread,
+          message: {
+            messageId: MessageId.make(`cursor-skill-message-${ordinal}`),
+            createdBy: "user",
+            creationSource: "web",
+            text,
+            attachments: [],
+          },
+        });
+        yield* runtime.events.pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+        );
+      });
+
+      yield* sendTurn(1, "please $ship-it now");
+      yield* fileSystem.makeDirectory(path.dirname(agentsSkill), { recursive: true });
+      yield* fileSystem.rename(cursorSkill, agentsSkill);
+      yield* sendTurn(2, "again $ship-it");
+
+      assert.deepEqual(
+        sentMessages.map((message) => message.split("\n\n<runtime_info>")[0]),
+        [
+          `please /ship-it now\n\n<invoked_skill name="ship-it" path="${path.join(cursorSkill, "SKILL.md")}">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>`,
+          `again /ship-it\n\n<invoked_skill name="ship-it" path="${path.join(agentsSkill, "SKILL.md")}">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>`,
+        ],
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer),
+      ),
+    ),
+  );
+
   it.effect("projects Cursor directory trees and lint diagnostics as file search results", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

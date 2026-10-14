@@ -241,21 +241,27 @@ describe("Cursor skills", () => {
   );
 
   it("rewrites only discovered skill mentions into Cursor slash invocations", () => {
+    const skills = new Map([
+      ["review", { name: "review", path: "/repo/.cursor/skills/review/SKILL.md", enabled: true }],
+    ]);
     expect(hasCursorSkillMention("use $Review_Pr:V2 here")).toBe(true);
     expect(hasCursorSkillMention("please $review this")).toBe(true);
-    expect(
-      rewriteCursorSkillMentions("use $review, keep $HOME and 5$review", new Set(["review"])),
-    ).toBe("use $review, keep $HOME and 5$review");
-    expect(rewriteCursorSkillMentions("please $review this", new Set(["review"]))).toBe(
-      "please /review this",
+    expect(rewriteCursorSkillMentions("use $review, keep $HOME and 5$review", skills)).toBe(
+      "use $review, keep $HOME and 5$review",
     );
+    expect(rewriteCursorSkillMentions("please $review this", skills)).toBe("please /review this");
   });
   it("detects and invokes digit-leading Cursor skills without rewriting money", () => {
-    const names = new Set(["2spec", "20k", "100M", "1e6"]);
+    const skills = new Map(
+      ["2spec", "20k", "100M", "1e6"].map((name) => [
+        name,
+        { name, path: `/repo/.cursor/skills/${name}/SKILL.md`, enabled: true },
+      ]),
+    );
     expect(hasCursorSkillMention("use $2spec here")).toBe(true);
     expect(hasCursorSkillMention("use $2spec here")).toBe(true);
-    expect(rewriteCursorSkillMentions("use $2spec here", names)).toBe("use /2spec here");
-    expect(rewriteCursorSkillMentions("use $2spec here", new Set())).toBe("use $2spec here");
+    expect(rewriteCursorSkillMentions("use $2spec here", skills)).toBe("use /2spec here");
+    expect(rewriteCursorSkillMentions("use $2spec here", new Map())).toBe("use $2spec here");
     for (const text of [
       "pay $20 tomorrow",
       "budget $20k here",
@@ -263,7 +269,62 @@ describe("Cursor skills", () => {
       "limit $1e6 here",
     ]) {
       expect(hasCursorSkillMention(text)).toBe(false);
-      expect(rewriteCursorSkillMentions(text, names)).toBe(text);
+      expect(rewriteCursorSkillMentions(text, skills)).toBe(text);
     }
+  });
+  it("points Cursor at the SKILL.md of mentioned skills it hides from the model", () => {
+    const skills = new Map([
+      ["review", { name: "review", path: "/repo/.cursor/skills/review/SKILL.md", enabled: true }],
+      [
+        "deploy",
+        {
+          name: "deploy",
+          path: "/repo/.agents/skills/deploy/SKILL.md",
+          enabled: true,
+          userInvocationOnly: true,
+        },
+      ],
+      [
+        "poteto-mode",
+        {
+          name: "poteto-mode",
+          path: "/home/user/.cursor/skills/poteto-mode/SKILL.md",
+          enabled: true,
+          userInvocationOnly: true,
+        },
+      ],
+    ]);
+    expect(rewriteCursorSkillMentions("please $review this", skills)).toBe("please /review this");
+    expect(
+      rewriteCursorSkillMentions(
+        "use $poteto-mode to $review then $deploy and $poteto-mode again, not $unknown",
+        skills,
+      ),
+    ).toBe(
+      [
+        "use /poteto-mode to /review then /deploy and /poteto-mode again, not $unknown",
+        "",
+        '<invoked_skill name="poteto-mode" path="/home/user/.cursor/skills/poteto-mode/SKILL.md">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>',
+        '<invoked_skill name="deploy" path="/repo/.agents/skills/deploy/SKILL.md">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>',
+      ].join("\n"),
+    );
+    const awkwardHome = new Map([
+      [
+        "deploy",
+        {
+          name: "deploy",
+          path: '/home/R&D "lab" <x>/.cursor/skills/deploy/SKILL.md',
+          enabled: true,
+          userInvocationOnly: true,
+        },
+      ],
+    ]);
+    expect(rewriteCursorSkillMentions("$deploy", awkwardHome)).toBe(
+      [
+        "/deploy",
+        "",
+        '<invoked_skill name="deploy" path="/home/R&amp;D &quot;lab&quot; &lt;x>/.cursor/skills/deploy/SKILL.md">The user invoked this skill. Read the SKILL.md at this path and follow it.</invoked_skill>',
+      ].join("\n"),
+    );
   });
 });
